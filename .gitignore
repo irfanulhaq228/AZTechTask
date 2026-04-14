@@ -1,0 +1,11 @@
+.next
+node_modules
+.env
+.env.local
+dist
+coverage
+uploads/*
+!uploads/.gitkeep
+prisma/dev.db
+*.pyc
+__pycache__/

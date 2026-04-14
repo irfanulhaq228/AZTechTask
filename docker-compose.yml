@@ -1,0 +1,74 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: products
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d products"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # Host port is configurable (default 15432) so it does not clash with local Postgres on 5432/5433/etc.
+    # Set POSTGRES_HOST_PORT in `.env` if the default is already taken. Compose reads `.env` for substitution here.
+    # Containers still use hostname `postgres` and internal port 5432 — DATABASE_URL for web/worker stays @postgres:5432.
+    ports:
+      - "${POSTGRES_HOST_PORT:-15432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # One-shot: apply Prisma schema before web/worker touch the DB (avoids worker racing web's `db push`).
+  migrate:
+    image: aztechtask-web
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    env_file:
+      - .env
+    environment:
+      # So `prisma.config.ts` can resolve `prisma/config` (not under `/app/node_modules` in the slim image).
+      NODE_PATH: /app/prisma-migrate-deps/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Use bundled CLI — `npx prisma` re-downloads Prisma on cold start and can hang for many minutes.
+    command: ["node", "prisma-migrate-deps/node_modules/prisma/build/index.js", "db", "push"]
+    restart: "no"
+
+  web:
+    image: aztechtask-web
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "3000:3000"
+    volumes:
+      - uploads_data:/app/uploads
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - uploads_data:/app/uploads
+
+volumes:
+  postgres_data:
+  uploads_data:

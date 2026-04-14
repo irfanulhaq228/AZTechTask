@@ -1,0 +1,65 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UploadStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model Upload {
+  id              String        @id @default(cuid())
+  fileName        String
+  storedPath      String
+  status          UploadStatus  @default(PENDING)
+  uploadedAt      DateTime      @default(now())
+  startedAt       DateTime?
+  completedAt     DateTime?
+  detectedHeaders Json?
+  totalRows       Int           @default(0)
+  processedRows   Int           @default(0)
+  errorRows       Int           @default(0)
+  duplicateRows   Int           @default(0)
+  failureReason   String?
+  errorDetails    Json?
+  products        Product[]
+  insight         UploadInsight?
+
+  @@index([status, uploadedAt(sort: Desc)])
+}
+
+model Product {
+  id              String   @id @default(cuid())
+  uploadId        String
+  rowNumber       Int
+  nameNormalized  String?
+  priceNormalized Float?
+  slug            String?
+  dedupeKey       String?
+  rawData         Json
+  cleanData       Json
+  createdAt       DateTime @default(now())
+  upload          Upload   @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+
+  @@index([uploadId])
+  @@index([slug])
+  @@index([dedupeKey])
+}
+
+model UploadInsight {
+  id          String   @id @default(cuid())
+  uploadId    String   @unique
+  summary     String
+  issues      Json?
+  stats       Json?
+  model       String
+  generatedAt DateTime @default(now())
+  upload      Upload   @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+}
